@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
+#include <sys/stat.h>
 
 #define R 256
 
@@ -210,7 +211,6 @@ void decode(char *filepathin, char *filepathout){
             node = (bit == 0) ? node->left : node->right;
         
             if (isLeaf(node)) {
-                //printf("%c", node->c);
                 fputc(node->c, fo);
                 node = root;
             }
@@ -220,6 +220,23 @@ void decode(char *filepathin, char *filepathout){
 
     fclose(fi);
     fclose(fo);
+}
+
+long get_file_size(const char *filename) {
+    FILE *file = fopen(filename, "rb");
+
+    if (file == NULL) {
+        perror("Error opening file");
+        return -1;
+    }
+
+    fseek(file, 0, SEEK_END);
+    ftell(file);
+    long fileSize = ftell(file);
+
+    fclose(file);
+
+    return fileSize;
 }
 
 
@@ -234,6 +251,10 @@ int main(int argc, char **argv){
         read_freq(argv[1], s);
         printf("Compressing...\n");
         encode(s, argv[1], argv[3]);
+        long o_file_size = get_file_size(argv[1]);
+        long c_file_size = get_file_size(argv[3]);
+        printf("Original file size: %ld\nCompressed file size: %ld\n", o_file_size, c_file_size);
+        printf("Saved %ldB of space; Size reduced with %.2f%%\n", o_file_size - c_file_size, (100.0 - (float)(c_file_size * 100)/o_file_size));
     }
     else if(!strcmp(argv[2], "-d")){
         printf("Decompressing...\n");
