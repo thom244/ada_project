@@ -13,6 +13,13 @@ typedef struct HuffmanNode{
     struct HuffmanNode *right;
 }HuffmanNode;
 
+void myfree(HuffmanNode *node){
+    if(node == NULL)    return;
+    myfree(node->left);
+    myfree(node->right);
+    free(node);
+}
+
 HuffmanNode *createNode(char c, int freq, HuffmanNode *left, HuffmanNode *right){
     HuffmanNode *node = (HuffmanNode*)malloc(sizeof(HuffmanNode));
 
@@ -172,6 +179,7 @@ void encode(int *freq, char* filepathin, char *filepathout){
     for (int i = 0; i < R; i++) {
         if (st[i]) free(st[i]);
     }
+    myfree(root);
 
     fclose(fi);
     fclose(fo);
@@ -217,6 +225,7 @@ void decode(char *filepathin, char *filepathout){
             bit = 0;
         }
     }
+    myfree(root);
 
     fclose(fi);
     fclose(fo);
