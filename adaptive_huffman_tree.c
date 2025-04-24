@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
+#include <math.h>
 
 #define R 256
 
@@ -77,7 +78,19 @@ void print_tree(HuffmanTree tree){
     printf("\n");
 }
 
-void encode(char *s){
+void encode(char *s, char *filepathin, char *filepathout){
+    FILE *fi = fopen(filepathin, "r");
+    if(!fi){
+        perror("Cannot open the input file\n");
+        exit(1);
+    }
+
+    FILE *fo = fopen(filepathout, "w");
+    if(!fo){
+        perror("Cannot open the input file\n");
+        exit(1);
+    }
+
     HuffmanTree tree = build_tree();
 
     int code[R + 8];
@@ -114,30 +127,82 @@ void encode(char *s){
         while(code_index >= 8){
             for(int i = 0; i < 8; i++){
                 buf[i] = code[i];
-                printf("%d", buf[i]);
+                fprintf(fo, "%d", buf[i]);
                 //write(buf);
             }
             code_index -= 8;
-            printf(" %d ", code_index);
             for(int i = 0; i < code_index; i++){
                 code[i] = code[i + 8];
             }
         }
         
     }
-    for(int i = 0; i < 8 && code_index > 0; i++){
-        if(i <= code_index){
-            printf("%d", code[i]);
+    for(int i = 0; i < code_index - 1; i++){
+        if(i < code_index){
+            fprintf(fo, "%d", code[i]);
         }
         else{
-            printf("0");
+            //fprintf(fo, "0");
+        }
+    }
+    fprintf(fo, "\n");
+    fclose(fi);
+    fclose(fo);
+    //free_tree(&tree);
+}
+
+void decode(char *filepathin, char *filepathout){
+    FILE *fi = fopen(filepathin, "r");
+    if(!fi){
+        perror("Cannot open the input file\n");
+        exit(1);
+    }
+
+    FILE *fo = fopen(filepathout, "w");
+    if(!fo){
+        perror("Cannot open the input file\n");
+        exit(1);
+    }
+
+    HuffmanTree tree = build_tree();
+    int c;
+    int isByte = 0;
+    int ch = 0;
+    HuffmanNode *node = tree.root;
+    while((c = fgetc(fi)) != EOF){
+        if(node->isNYT == 0 && c == '0' && isByte == 0){
+            node = node->left;
+        }
+        else if(node->isNYT != 0){
+            isByte++;
+            ch += pow(2, 8 - isByte) * (c - '0');
+            if(isByte - 8 == 0){
+                isByte -= 8;
+                printf("%c", ch);
+                add_node(&tree,(char) ch);
+                ch = 0;
+                node = tree.root;
+            }
+            //update(c);
+        }
+        else{
+            printf("%c", node->right->c);
+            node = tree.root;
         }
     }
     printf("\n");
+    fclose(fi);
+    fclose(fo);
+    //free_tree(&tree);
 }
 
-int main(){
-    char *s = "abc";
-    encode(s);
+int main(int argc, char **argv){
+    if(argc != 4){
+        perror("Usage: <input file> <output encoded file> <output decoded file>");
+        exit(1);
+    }
+    char *s = "Cal de mare";
+    encode(s, argv[1], argv[2]);
+    decode(argv[2], argv[3]);
     return 0;
 }
