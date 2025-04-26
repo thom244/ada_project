@@ -6,80 +6,101 @@
 
 #define R 256
 
-typedef struct HuffmanNode{
-    char c;
+typedef struct HuffmanNode {
+    unsigned char c;
     int freq;
-    int isNYT; //Not Yet Transffered
-    struct HuffmanNode *left;
-    struct HuffmanNode *right;
-    struct HuffmanNode *parent;
-}HuffmanNode;
+    struct HuffmanNode *left, *right;
+} HuffmanNode;
 
-typedef struct{
-    HuffmanNode *root;
-    HuffmanNode *isNYT;
-    HuffmanNode *exist_char[R];
-}HuffmanTree;
-
-HuffmanNode *createNode(char c, int freq, int isNYT){
-    HuffmanNode *node = (HuffmanNode*)malloc(sizeof(HuffmanNode));
+HuffmanNode* createNode(unsigned char c, int freq, HuffmanNode *left, HuffmanNode *right) {
+    HuffmanNode* node = (HuffmanNode*)malloc(sizeof(HuffmanNode));
     node->c = c;
     node->freq = freq;
-    node->isNYT = isNYT;
-    node->left = NULL;
-    node->right = NULL;
-    node->parent = NULL;
+    node->left = left;
+    node->right = right;
     return node;
 }
 
-HuffmanTree build_tree(){
-    HuffmanTree tree;
-    tree.root = createNode(0, 0, 1);
-    tree.isNYT = tree.root;
+void freeTree(HuffmanNode* root) {
+    if (!root) return;
+    freeTree(root->left);
+    freeTree(root->right);
+    free(root);
+}
+
+int isLeaf(HuffmanNode* node) {
+    return node && (node->left == NULL && node->right == NULL);
+}
+
+int cmp(const void* a, const void* b){
+    HuffmanNode *A = *(HuffmanNode**)a;
+    HuffmanNode *B = *(HuffmanNode**)b;
+
+    return A->freq - B->freq;
+}
+
+HuffmanNode *rebuildTree(int *freq){
+    HuffmanNode **nodes = (HuffmanNode**)malloc(R * sizeof(HuffmanNode*));
+    int count = 0;
+    HuffmanNode *isNYT = createNode('\0', 0, NULL, NULL);
+    nodes[count++] = isNYT;
+
     for(int i = 0; i < R; i++){
-        tree.exist_char[i] = NULL;
+        if(freq[i] > 0){
+            nodes[count++] = createNode((char)i, freq[i], NULL, NULL);
+        }
     }
-    return tree;
-}
 
-void free_tree(HuffmanNode* node) {
-    if (node == NULL) return;
-    free_tree(node->left);
-    free_tree(node->right);
-    free(node);
-}
+    qsort(nodes, count, sizeof(HuffmanNode*), cmp);
+    
+    while(count > 1){
+        HuffmanNode *left = nodes[0];
+        HuffmanNode *right = nodes[1];
+        HuffmanNode *parent = createNode('0', left->freq + right->freq, left, right);
 
-void add_node(HuffmanTree *tree, char c){
-    HuffmanNode *node = tree->isNYT;
-    HuffmanNode *to_add = createNode(c, 1, 0);
-    HuffmanNode *parent = createNode(0, 1, 0);
+        nodes[1] = parent;
+        count--;
 
-    parent->right = to_add;
-    parent->left = node;
-    if (node->parent) {
-        if (node->parent->left == node)
-            node->parent->left = parent;
-        else
-            node->parent->right = parent;
-    } else {
-        tree->root = parent;
+        for(int i = 0; i < count; i++){
+            nodes[i] = nodes[i + 1];
+        }
+
+        qsort(nodes, count, sizeof(HuffmanNode*), cmp);
     }
-    to_add->parent = parent;
-    node->parent = parent;
-    tree->exist_char[(int)c] = to_add;
+    HuffmanNode *root = nodes[0];
+
+    free(nodes);
+
+    return root;
 }
 
-void print_tree(HuffmanTree tree){
-    HuffmanNode *node = tree.root;
-    while(node && node->right){
-        printf("%c ", node->right->c);
-        node = node->left;
+
+int findCode(HuffmanNode* root, char c, char* path, char* result) {
+    if (root == NULL) return 0;
+
+    if (isLeaf(root) && root->c == c) {
+        strcpy(result, path);
+        return 1;
     }
-    printf("\n");
+
+    if (root->left) {
+        char newPath[R];
+        sprintf(newPath, "%s0", path);
+        if(findCode(root->left, c, newPath, result)) return 1;
+    }
+    if (root->right) {
+        char newPath[R];
+        sprintf(newPath, "%s1", path);
+        if(findCode(root->right, c, newPath, result)) return 1;
+    }
+    
+    return 0;
 }
 
-void encode(char *s, char *filepathin, char *filepathout){
-    FILE *fi = fopen(filepathin, "rb");
+void encode(char* filepathin, char *filepathout){
+    HuffmanNode *root = NULL;
+
+    FILE *fi = fopen(filepathin, "r");
     if(!fi){
         perror("Cannot open the input file\n");
         exit(1);
@@ -87,166 +108,191 @@ void encode(char *s, char *filepathin, char *filepathout){
 
     FILE *fo = fopen(filepathout, "wb");
     if(!fo){
-        perror("Cannot open the input file\n");
+        perror("Cannot open the output file\n");
         exit(1);
     }
 
-    HuffmanTree tree = build_tree();
-
-    int code[R + 8];
-    uint8_t buf = 0;;
-    int code_index = 0;
-
-    int c;
     uint32_t size = 0;
+
     fwrite(&size, sizeof(uint32_t), 1, fo);
 
-    while((c = fgetc(fi)) != EOF){
-        HuffmanNode *to_encode = tree.exist_char[(int)c];
+    uint8_t buf;
+    int freq[R] = {0};
+    int c;
+    int code[R];
+    int code_index = 0;
 
-        if(to_encode == NULL){
-            add_node(&tree, c);
-            HuffmanNode *node = tree.root;
-            while(node && node->left && node->left != tree.isNYT){
-                code[code_index++] = 0;
-                node = node->left;
-            }
-            
-            char ch = c;
-            for (int j = sizeof (ch) * 8 - 1; j >= 0; j--){
-                code[code_index++] = ((ch >> j) & 0x1) ? 1 : 0;
-            }
+    while((c = fgetc(fi)) != EOF){
+        freeTree(root);
+        root = rebuildTree(freq);
+        freq[c]++;
+
+        int isNYT = 0;
+
+        char s[R] = {0};
+        if(freq[c] == 1){
+            isNYT = 1;
+            findCode(root, '\0', "", s);
         }
         else{
-            HuffmanNode *node = tree.root;
-            while(node->right != to_encode){
-                code[code_index++] = 0;
-                node = node->left;
-            }
-            code[code_index++] = 1;
-            //update(tree, to_encode);
+            findCode(root, c, "", s);
         }
-
-        while(code_index >= 8){
+        for(int i = 0; s[i] != '\0'; i++){
+            code[code_index++] = (s[i] == '1');
+        }
+        if(isNYT){
             for(int i = 0; i < 8; i++){
-                buf <<= 1;
-                buf |= code[i] & 0x1;
+                code[code_index++] = (c >> (7 - i)) & 1;
             }
-
-            fwrite(&buf, sizeof(uint8_t), 1, fo);
+        }
+            
+        while(code_index > 8){
             buf = 0;
-            size++;
-
+            for (int i = 0; i < 8; i++) {
+                buf = (buf << 1) | code[i];
+            }
             code_index -= 8;
+            size += 8;
+            fwrite(&buf, sizeof(uint8_t), 1, fo);
             for(int i = 0; i < code_index; i++){
                 code[i] = code[i + 8];
             }
-        }
-        
+        }     
     }
+
     buf = 0;
-    for(int i = 0; i < code_index; i++) {
-        buf <<= 1;
-        buf |= code[i] & 0x1;
+    for(int i = 0; i < code_index; i++){
+        buf = (buf << 1) | code[i];
     }
-    buf <<= (8 - code_index);
-    fwrite(&buf, sizeof(uint8_t), 1, fo);
-    size++;
+    if(code_index > 0){
+        buf <<= 8-code_index;
+        size += code_index;
+        fwrite(&buf, sizeof(uint8_t), 1, fo);
+    }
 
-
-    fseek(fo, 0, SEEK_SET);
+    rewind(fo);
     fwrite(&size, sizeof(uint32_t), 1, fo);
+    freeTree(root);
 
     fclose(fi);
     fclose(fo);
-    free_tree(tree.root);
 }
+
 
 void decode(char *filepathin, char *filepathout){
     FILE *fi = fopen(filepathin, "rb");
-    if(!fi){
+    if (!fi) {
         perror("Cannot open the input file\n");
         exit(1);
     }
 
     FILE *fo = fopen(filepathout, "w");
-    if(!fo){
-        perror("Cannot open the input file\n");
+    if (!fo) {
+        perror("Cannot open the output file\n");
         exit(1);
     }
 
-    HuffmanTree tree = build_tree();
-    int c = 0;
-    int isByte = 0;
-    int ch = 0;
-    uint8_t buf;
-    HuffmanNode *node = tree.root;
+    uint32_t read_size;
+    fread(&read_size, sizeof(read_size), 1, fi);
 
-    uint32_t size;
-    fread(&size, sizeof(uint32_t), 1, fi);
-    printf("%d\n", size);
+    uint8_t buffer = 0;
+    int bits_left = 0;
 
-    for(int i = 0; i < size; i++){
-        fread(&buf, sizeof(uint8_t), 1, fi);
-        for(int j = 0; j < 8; j++){
-            c = (buf >> (7 - j)) & 0x1;
-            if(node->isNYT == 0 && c == 0 && isByte == 0){
-                node = node->left;
-            }
-            else if(node->isNYT != 0){
-                isByte++;
-                ch += pow(2, 8 - isByte) * c;
-                if(isByte - 8 == 0){
-                    isByte -= 8;
-                    fputc(ch, fo);
-                    add_node(&tree,(char) ch);
-                    ch = 0;
-                    node = tree.root;
+    int freq[R] = {0};
+    HuffmanNode *root = rebuildTree(freq);
+    HuffmanNode *node = root;
+
+    while (read_size > 0) {
+        if (bits_left == 0) {
+            if (fread(&buffer, sizeof(buffer), 1, fi) != 1) break;
+            bits_left = 8;
+        }
+
+        if (isLeaf(node) && node->c == '\0') {
+            uint8_t c = 0;
+            for (int i = 0; i < 8; i++) {
+                if (bits_left == 0) {
+                    if (fread(&buffer, sizeof(buffer), 1, fi) != 1) break;
+                    bits_left = 8;
                 }
-                //update(c);
+                int bit = (buffer >> (bits_left - 1)) & 1;
+                bits_left--;
+
+                c = (c << 1) | bit;
+                read_size--;
             }
-            else{
-                fputc(node->right->c, fo);
-                node = tree.root;
-            }
+            printf("%d\n", c);
+            fputc(c, fo);
+            freq[c]++;
+            freeTree(root);
+            root = rebuildTree(freq);
+            node = root;
+            continue;
+        }
+
+        int bit = (buffer >> (bits_left - 1)) & 1;
+        bits_left--;
+        read_size--;
+
+        node = (bit == 0) ? node->left : node->right;
+
+        if (isLeaf(node) && node->c != '\0') {
+            fputc(node->c, fo);
+            freq[node->c]++;
+            freeTree(root);
+            root = rebuildTree(freq);
+            node = root;
         }
     }
-    printf("\n");
+
+    freeTree(root);
     fclose(fi);
     fclose(fo);
-    free_tree(tree.root);
 }
 
-int is_identical(char *f1, char *f2){
-    FILE *fi1 = fopen(f1, "r");
-    if(!fi1){
-        perror("Cannot open input file 1\n");
-        exit(1);
+
+
+long get_file_size(const char *filename) {
+    FILE *file = fopen(filename, "rb");
+
+    if (file == NULL) {
+        perror("Error opening file\n");
+        return -1;
     }
-    FILE *fi2 = fopen(f2, "r");
-    if(!fi2){
-        perror("Cannot open input file 2\n");
-        exit(1);
-    }
-    int c1, c2;
-    while((c1 = fgetc(fi1)) != EOF){
-        c2 = fgetc(fi2);
-        if(c1 != c2){
-            printf("%c - %c\n", c1, c2);
-            return 0;
-        }
-    }
-    return 1;
+
+    fseek(file, 0, SEEK_END);
+    ftell(file);
+    long fileSize = ftell(file);
+
+    fclose(file);
+
+    return fileSize;
 }
 
-int main(int argc, char **argv){
-    if(argc != 4){
-        perror("Usage: <input file> <output encoded file> <output decoded file>");
-        exit(1);
+int main(int argc, char** argv) {
+    if (argc != 4) {
+        printf("Usage: <input_file> <-c|-d> <output_file>\n");
+        return 1;
     }
-    char *s = "Cal de mare";
-    encode(s, argv[1], argv[2]);
-    decode(argv[2], argv[3]);
-    is_identical(argv[1], argv[3])?printf("True\n"):printf("False\n");
+
+    if (strcmp(argv[2], "-c") == 0) {
+        printf("Encoding...\n");
+        encode(argv[1], argv[3]);
+        long o_file_size = get_file_size(argv[1]);
+        long c_file_size = get_file_size(argv[3]);
+        printf("Original file size: %ld\nCompressed file size: %ld\n", o_file_size, c_file_size);
+        printf("Saved %ldB of space; Size reduced with %.2f%%\n", o_file_size - c_file_size, (100.0 - (float)(c_file_size * 100)/o_file_size));
+        printf("Encoding complete.\n");
+    }
+    else if (strcmp(argv[2], "-d") == 0) {
+        printf("Decoding...\n");
+        decode(argv[1], argv[3]);
+        printf("Decoding complete.\n");
+    }
+    else {
+        printf("Unknown command: %s\n", argv[2]);
+        return 1;
+    }
+
     return 0;
 }
